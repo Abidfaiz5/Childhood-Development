@@ -275,6 +275,10 @@ function renderServices() {
 function renderReports() {
   var h = sectionTitle("Reports & Sources", "Reports",
     "Every report carries its source name, source URL, data collection date, verification status, estimated vs confirmed figures, and research limitations.");
+  h += card('<span class="font-label-md text-label-md text-on-surface font-medium">Full feasibility report</span>'
+    + '<span class="font-body-sm text-body-sm text-secondary">Downloads a complete, print-ready report — Executive Summary, Market, Competitors, Location, Feasibility (with your current calculator settings), Services, and Sources. Open it in a browser and print / save as PDF.</span>'
+    + '<div class="pt-space-sm"><button id="downloadReportBtn" class="px-space-md py-space-sm rounded-lg bg-primary text-on-primary font-body-md text-body-md font-medium hover:opacity-90">Download full report (.html)</button></div>'
+    + '<span class="font-caption text-caption text-secondary" id="reportStatus"></span>');
   h += card('<span class="font-label-md text-label-md text-on-surface font-medium">Revenue lines a full model would add</span>'
     + '<div class="flex flex-col gap-1 pt-space-sm">'
     + [["Individual therapy sessions", "Rs 1,500–5,000 / session", "Confirmed range"],
@@ -295,6 +299,8 @@ function renderReports() {
       }).join("")
     + "</div>");
   document.getElementById("reportsView").innerHTML = h;
+  var dlBtn = document.getElementById("downloadReportBtn");
+  if (dlBtn) dlBtn.addEventListener("click", generateReport);
 }
 
 /* ---------- feasibility calculator ---------- */
@@ -505,3 +511,151 @@ document.addEventListener("DOMContentLoaded", function () {
   if (form) form.addEventListener("submit", handleQuerySubmit);
   showView("chat");
 });
+
+/* ---------- report generation ---------- */
+function reportRow(label, value) {
+  return '<tr><td style="padding:8px 10px;border-bottom:1px solid #e2e8f0;font-weight:600;width:38%">' + esc(label) + '</td><td style="padding:8px 10px;border-bottom:1px solid #e2e8f0">' + esc(value) + "</td></tr>";
+}
+
+function buildReportHtml() {
+  var r = calcResults(calc);
+  var today = new Date().toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
+  var css = "body{font-family:Inter,system-ui,sans-serif;color:#0b1c30;max-width:820px;margin:0 auto;padding:32px 24px;line-height:1.6}"
+    + "h1{font-size:28px;margin:0 0 4px}h2{font-size:20px;color:#0f766e;border-bottom:2px solid #0f766e;padding-bottom:6px;margin-top:36px}"
+    + "h3{font-size:16px;margin:20px 0 6px}.sub{color:#475569;font-size:14px}"
+    + "table{width:100%;border-collapse:collapse;font-size:14px;margin:10px 0}"
+    + "th{text-align:left;background:#f1f5f9;padding:8px 10px;border-bottom:2px solid #e2e8f0}"
+    + "td{padding:8px 10px;border-bottom:1px solid #e2e8f0;vertical-align:top}"
+    + ".badge{display:inline-block;font-size:11px;font-weight:600;padding:2px 8px;border-radius:999px;background:#e0f2fe;color:#075985}"
+    + ".badge.toverify{background:#fef3c7;color:#92400e}.badge.confirmed{background:#dcfce7;color:#166534}"
+    + ".badge.directory{background:#e0e7ff;color:#3730a3}.badge.news{background:#fce7f3;color:#9d174d}"
+    + ".badge.assumption{background:#f1f5f9;color:#475569}"
+    + ".kpi{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:12px 0}"
+    + ".kpi div{border:1px solid #e2e8f0;border-radius:8px;padding:12px}"
+    + ".kpi b{font-size:20px;display:block}.note{background:#f8fafc;border-left:3px solid #0f766e;padding:10px 14px;font-size:14px;margin:12px 0}"
+    + "@media print{body{padding:0}.noprint{display:none}}";
+  var h = "<!DOCTYPE html><html><head><meta charset='utf-8'><title>ECD Centre — Feasibility Report</title><style>" + css + "</style></head><body>";
+  h += "<h1>Childhood Development Centre — Feasibility Report</h1>";
+  h += '<p class="sub">Early Childhood Development &amp; Early Intervention Centre, Lahore · Phase 1: Research &amp; Business Planning</p>';
+  h += '<p class="sub">Report date: ' + esc(today) + ' · Research date: 18 November 2026 · Sources: public websites / directories only — no site visits, calls, or review-mining yet.</p>';
+  h += '<p class="note"><strong>How to read this report.</strong> Every figure carries a verification badge. <strong>Confirmed</strong> = published by the centre/clinic itself. <strong>Directory</strong> = Marham / Oladoc / InstaCare listing. <strong>To verify</strong> = the centre does not publish the figure — it needs a call or visit. Calculator inputs are <strong>Assumptions</strong> (editable), not market figures. No Lahore ECD market-size figure exists — it is not invented.</p>';
+
+  /* Executive summary */
+  h += "<h2>1. Executive Summary</h2>";
+  h += '<div class="kpi">'
+    + "<div><b>10</b> Lahore centres &amp; clinics mapped <span class='badge confirmed'>Confirmed</span></div>"
+    + "<div><b>Rs 1,500–5,000</b> published per-session therapy fee range <span class='badge directory'>Directory</span></div>"
+    + "<div><b>59.4%</b> Punjab children aged 36–59 months developmentally on track (ECDI) <span class='badge confirmed'>Confirmed</span></div>"
+    + "<div><b>18.9%</b> children aged 3–5 enrolled in early childhood education, Pakistan <span class='badge confirmed'>Confirmed</span></div></div>";
+  h += "<p>Only 3 of the 10 mapped providers publish any price at all. The recommended first location is <strong>Johar Town</strong> (emerging, open), with DHA as a premium alternative. "
+    + "On the Standard model (" + calc.therapists + " therapists, fee Rs " + calc.fee.toLocaleString("en-PK") + ", " + calc.occupancy + "% occupancy), monthly revenue is <strong>" + rs(r.revenue) + "</strong> against operating cost <strong>" + rs(r.cost) + "</strong> — a monthly <strong>" + (r.profit >= 0 ? "profit" : "loss") + " of " + rs(r.profit) + "</strong>. Break-even is <strong>" + r.beSessions + " sessions / month (" + r.beChildren + " active children)</strong>.</p>";
+
+  /* Market */
+  h += "<h2>2. Market Research</h2>";
+  h += "<h3>Key indicators</h3><table><tr><th>Indicator</th><th>Value</th><th>Status</th></tr>";
+  INDICATORS.forEach(function (k) {
+    h += "<tr><td>" + esc(k.label) + "<br><span class='sub'>" + esc(k.note) + "</span></td><td><strong>" + esc(k.value) + "</strong></td><td><span class='badge " + k.badge.toLowerCase().replace(/ /g, "") + "'>" + esc(k.badge) + "</span></td></tr>";
+  });
+  h += "</table>";
+  h += "<h3>ECDI on-track — children aged 36–59 months</h3><table><tr><th>Province</th><th>On track</th></tr>";
+  ECDI.forEach(function (x) { h += "<tr><td>" + esc(x.province) + "</td><td>" + x.pct + "%</td></tr>"; });
+  h += "</table><p class='sub'>UNICEF MICS 2017–2020, n = 46,067 children, peer-reviewed analysis (MDPI Children 2026). In Punjab roughly 4 in 10 children are NOT on track (~40%); literacy–numeracy is the weakest domain everywhere (14.6–27.2%); physical development exceeds 90%.</p>";
+  h += "<h3>Pakistan context</h3><ul>";
+  PAKISTAN_CONTEXT.forEach(function (t) { h += "<li>" + esc(t) + "</li>"; });
+  h += "</ul><p class='sub'>Sources: UNICEF ECD Country Profile Pakistan (2025 update); UNICEF Pakistan COAR 2023. <strong>No Lahore ECD market-size figure exists.</strong></p>";
+  h += "<p><strong>Still to research:</strong> structured parent interviews · Google-review mining · willingness-to-pay by area · referral patterns from paediatricians / preschools.</p>";
+
+  /* Competitors */
+  h += "<h2>3. Competitor Analysis — 10 Lahore centres</h2>";
+  h += "<table><tr><th>#</th><th>Centre</th><th>Area</th><th>Services</th><th>Fees</th><th>Status</th></tr>";
+  COMPETITORS.forEach(function (c, i) {
+    var fees = c.fees.map(function (f) { return esc(f.label) + ": <strong>" + esc(f.value) + "</strong>" + (f.was ? " <s>" + esc(f.was) + "</s>" : ""); }).join("<br>");
+    h += "<tr><td>" + (i + 1) + "</td><td><strong>" + esc(c.name) + "</strong><br><span class='sub'>" + esc(c.notes) + "<br>Source: " + esc(c.source) + "</span></td><td>" + esc(c.area) + "</td><td>" + c.services.map(esc).join(", ") + "</td><td>" + fees + "</td><td><span class='badge " + c.badge.toLowerCase().replace(/ /g, "") + "'>" + esc(c.badge) + "</span></td></tr>";
+  });
+  h += "</table><p class='sub'>Only 3 of 10 publish any price at all. Fees no centre publishes are shown as To verify — never as confirmed prices.</p>";
+  h += "<h3>Pricing benchmark — published only, seen 18 Nov 2026</h3><table><tr><th>Item</th><th>Value</th><th>Status</th></tr>";
+  BENCHMARKS.forEach(function (b) {
+    h += "<tr><td>" + esc(b.item) + "</td><td><strong>" + esc(b.value) + "</strong></td><td><span class='badge " + b.badge.toLowerCase().replace(/ /g, "") + "'>" + esc(b.badge) + "</span></td></tr>";
+  });
+  h += "</table>";
+
+  /* Location */
+  h += "<h2>4. Location Intelligence — 6 areas</h2>";
+  h += "<p><strong>Recommendation (hypothesis to test): Johar Town first, DHA as premium alternative.</strong> Rent is deliberately NOT scored — no rent figure is used anywhere.</p>";
+  h += "<table><tr><th>Area</th><th>Verdict</th><th>Mapped providers</th><th>Detail</th></tr>";
+  LOCATIONS.forEach(function (l) {
+    h += "<tr><td><strong>" + esc(l.area) + "</strong></td><td>" + esc(l.verdict) + "</td><td>" + esc(l.mapped) + "</td><td>" + esc(l.detail) + "</td></tr>";
+  });
+  h += "</table><p class='sub'>Rent verification method: 5+ live listings per shortlisted area on Zameen.com / OLX for 8–12 marla houses or commercial floors; call two estate agents per area; visit top 2 sites (parking, school proximity, legal operation).</p>";
+
+  /* Feasibility */
+  h += "<h2>5. Financial Feasibility</h2>";
+  h += "<p>Model used at report time: <strong>" + (calcPreset === "custom" ? "Custom" : PRESETS[calcPreset].label) + "</strong>. Revenue = therapists × sessions/day × days × occupancy × fee. Cost = rent + therapists × salary + other monthly costs. Assessments, packages and daycare income are EXCLUDED from the base case (upside only).</p>";
+  h += "<table>"
+    + reportRow("One-time setup", rs(calc.setup))
+    + reportRow("Monthly rent (placeholder — replace with a verified figure)", rs(calc.rent))
+    + reportRow("Therapists", String(calc.therapists))
+    + reportRow("Salary per therapist / month", rs(calc.salary))
+    + reportRow("Other monthly costs", rs(calc.other))
+    + reportRow("Fee per session", rs(calc.fee))
+    + reportRow("Sessions / therapist / day", String(calc.sessionsPerDay))
+    + reportRow("Working days / month", String(calc.days))
+    + reportRow("Occupancy", calc.occupancy + "%")
+    + reportRow("Sessions / child / month", String(calc.sessionsPerChild))
+    + "</table>";
+  h += "<table>"
+    + reportRow("Monthly revenue", rs(r.revenue) + "  (" + r.booked + " / " + r.capacity + " sessions booked)")
+    + reportRow("Monthly operating cost", rs(r.cost))
+    + reportRow("Monthly profit / (loss)", rs(r.profit))
+    + reportRow("Break-even", r.beSessions + " sessions / month · " + r.beChildren + " active children")
+    + reportRow("Payback", r.payback)
+    + "</table>";
+  h += "<p class='sub'>Rent is a placeholder. Salary and other costs are assumptions, not market figures. Break-even utilisation on the Standard model: 324 / 432 sessions = 75%.</p>";
+  h += "<h3>Revenue lines a full model would add</h3><table><tr><th>Line</th><th>Indicative figure</th><th>Status</th></tr>";
+  [["Individual therapy sessions", "Rs 1,500–5,000 / session", "Confirmed range"],
+   ["Developmental assessment + report", "Rs 8,000–15,000", "Confirmed — GetMindCare · Karishma"],
+   ["Monthly therapy package", "Rs 35,000 / mo OT & special care", "Confirmed — PhysioGen"],
+   ["Daycare / ECD program", "Rs 25,000 / mo + Rs 5,000 registration", "Confirmed — PhysioGen"],
+   ["Parent training & workshops", "Not published by mapped centres", "To price-test"],
+   ["School screening / liaison contracts", "Offered by First Hope & NEST", "Fees not published — To verify"]]
+    .forEach(function (x) { h += "<tr><td>" + esc(x[0]) + "</td><td>" + esc(x[1]) + "</td><td>" + esc(x[2]) + "</td></tr>"; });
+  h += "</table>";
+
+  /* Services */
+  h += "<h2>6. Services Blueprint — 12 services</h2>";
+  h += "<p><strong>Clinical boundary:</strong> never recommend diagnosing or treating a child without qualified professionals; individual treatment plans require approval by qualified specialists.</p>";
+  h += "<table><tr><th>Service</th><th>Type</th><th>Professional</th><th>Seen in market</th></tr>";
+  SERVICES.forEach(function (s) {
+    h += "<tr><td><strong>" + esc(s.name) + "</strong></td><td>" + esc(s.type) + "</td><td>" + esc(s.pro) + "</td><td>" + esc(s.seen) + "</td></tr>";
+  });
+  h += "</table>";
+
+  /* Sources */
+  h += "<h2>7. Sources &amp; Limitations</h2>";
+  h += "<p>All sources retrieved 18 Nov 2026. Public websites / directories only — no site visits, calls, or review-mining yet.</p><ul>";
+  SOURCES.forEach(function (s) { h += "<li><a href='" + esc(s.url) + "'>" + esc(s.name) + "</a> — " + esc(s.url) + "</li>"; });
+  h += "</ul>";
+  h += "<p class='sub'>Limitations: no Lahore ECD market-size figure exists; no verified rent figure; willingness-to-pay by area not yet researched; parent interviews and Google-review mining not yet done. Figures labelled To verify need a call or visit before they are used in a decision.</p>";
+  h += "<hr><p class='sub'>Generated from the Childhood Development Centre — Consultancy Brain dashboard (Phase 1). Research date 18 November 2026.</p>";
+  h += "</body></html>";
+  return h;
+}
+
+function generateReport() {
+  var status = document.getElementById("reportStatus");
+  try {
+    var html = buildReportHtml();
+    var blob = new Blob([html], { type: "text/html;charset=utf-8" });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement("a");
+    a.href = url;
+    a.download = "ECD-Centre-Feasibility-Report-2026-11-18.html";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(function () { URL.revokeObjectURL(url); }, 5000);
+    if (status) status.textContent = "Report downloaded. Open it in a browser and use Print → Save as PDF for a PDF copy.";
+  } catch (e) {
+    if (status) status.textContent = "Could not generate the report: " + e.message;
+  }
+}
