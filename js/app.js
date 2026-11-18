@@ -1,0 +1,507 @@
+/* Childhood Development Centre — Consultancy Brain (Phase 1)
+   Real project. Chat posts to the live Groq webhook in n8n.
+   All figures are from the verified 18 Nov 2026 research; every figure
+   carries its verification badge. Nothing is invented. */
+"use strict";
+
+var WEBHOOK_URL = "https://n8n.urdubazars.com/webhook/consultancy-demo-chat";
+
+/* ---------- helpers ---------- */
+function esc(s) {
+  return String(s).replace(/[&<>"'`=\/]/g, function (c) {
+    return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;", "/": "&#47;", "`": "&#96;", "=": "&#61;" }[c];
+  });
+}
+function rs(n) {
+  return "Rs " + Number(n).toLocaleString("en-PK");
+}
+function badge(label) {
+  var cls = {
+    "Confirmed": "bg-primary-container/20 text-primary border border-primary/30",
+    "Directory": "bg-surface-container-high text-secondary border border-outline-variant/40",
+    "To verify": "bg-error-container/40 text-error border border-error/20",
+    "News report": "bg-surface-container-high text-secondary border border-outline-variant/40",
+    "Assumption": "bg-surface-container-high text-secondary border border-outline-variant/40"
+  }[label] || "bg-surface-container-high text-secondary border border-outline-variant/40";
+  return '<span class="font-caption text-caption px-space-xs py-0.5 rounded border ' + cls + '">' + esc(label) + "</span>";
+}
+function card(inner) {
+  return '<div class="bg-surface-container-lowest rounded-xl shadow-sm border border-outline-variant/30 p-space-md md:p-space-lg">' + inner + "</div>";
+}
+function sectionTitle(kicker, title, sub) {
+  return '<div class="flex flex-col gap-space-xs max-w-3xl">'
+    + '<span class="font-caption text-caption text-secondary uppercase tracking-widest">' + esc(kicker) + "</span>"
+    + '<h1 class="font-headline-lg text-headline-lg text-on-surface tracking-tight">' + esc(title) + "</h1>"
+    + (sub ? '<p class="font-body-lg text-body-lg text-secondary">' + esc(sub) + "</p>" : "")
+    + "</div>";
+}
+
+/* ---------- verified ECD data (research date 18 Nov 2026) ---------- */
+var INDICATORS = [
+  { value: "10", label: "Lahore centres & clinics mapped", note: "Own websites + Google listings, 18 Nov 2026", badge: "Confirmed" },
+  { value: "Rs 1,500–5,000", label: "Published per-session therapy fee range, Lahore", note: "Marham · Oladoc · InstaCare", badge: "Directory" },
+  { value: "59.4%", label: "Punjab children aged 36–59 months developmentally on track (ECDI)", note: "UNICEF MICS 2017–2020, peer-reviewed analysis (MDPI)", badge: "Confirmed" },
+  { value: "18.9%", label: "Children aged 3–5 enrolled in early childhood education, Pakistan", note: "UNICEF Pakistan COAR 2023", badge: "Confirmed" }
+];
+
+var ECDI = [
+  { province: "Punjab", pct: 59.4 },
+  { province: "Khyber Pakhtunkhwa", pct: 54.6 },
+  { province: "Sindh", pct: 47.5 },
+  { province: "Balochistan", pct: 39.1 }
+];
+
+var PAKISTAN_CONTEXT = [
+  "31,988,331 children under five (13% of population)",
+  "34% under-five stunting",
+  "Under-five mortality 58 per 1,000",
+  "~6.89 million births per year",
+  "Only 18.9% of 3–5-year-olds enrolled in early childhood education",
+  "Richest–poorest gap in developmental attainment: 18.8–35.6 percentage points",
+  "Government attention rising — Punjab's first government autism school & resource centre, Lahore, Feb 2026"
+];
+
+var COMPETITORS = [
+  { name: "PhysioGen Daycare & Pediatric Therapy Center", area: "Bahria Town · Sector D, Plaza 54, AA Block", badge: "Fees confirmed",
+    services: ["Occupational Therapy", "Speech Therapy", "Sensory integration", "Daycare (8:30–3:30)", "CCTV + WhatsApp updates"],
+    fees: [{ label: "Registration (one-time)", value: "Rs 5,000" }, { label: "Daycare package", value: "Rs 25,000/mo", was: "Rs 29,400" }, { label: "OT & Special Care package", value: "Rs 35,000/mo", was: "Rs 40,000" }],
+    notes: "Daycare + early intervention wing; ASD / ADHD / Down syndrome / sensory delays; team led by DPTs (Dr. Taseen Mansoor; Dr. Amna Tariq, OT); launch offer for first 10 children; model is monthly packages, not per-session.",
+    source: "physiogen.care" },
+  { name: "The First Hope Center", area: "DHA Phase 6 · Raya, Fairway Commercial", badge: "Fees to verify",
+    services: ["Psychological assessment (2–3 days)", "Speech & Language", "OT", "BCBA behaviour therapy", "IEP & school liaison", "School Readiness (3–6)"],
+    fees: [{ label: "Session fees", value: "Not published — call / visit to verify" }],
+    notes: "Premium; UK / Ireland-registered therapists, BCBAs, developmental paediatrician; free 20-minute first call; 10% sibling / hardship discount on therapy; ages 18 months–18 years.",
+    source: "thefirsthopecenter.com" },
+  { name: "NEST Institute", area: "Lahore centre · clinic, home, school & online", badge: "Fees to verify",
+    services: ["Developmental screening (90 min)", "Full diagnostic evaluation (3–4 sessions)", "Speech Therapy 45 min/wk", "OT 45 min/wk + home program", "Educational therapy", "Family counselling"],
+    fees: [{ label: "Session fees", value: "Not published — call / visit to verify" }],
+    notes: "One shared case record across screening → evaluation → therapy → school liaison; ages 2–16 therapy, screening 3–18.",
+    source: "thenestinstitute.org/en/services" },
+  { name: "REX Medical Complex — Child Therapy Centre", area: "Allama Iqbal Town · 91-A College Block", badge: "Fees to verify",
+    services: ["Speech & Language", "ABA Therapy", "OT", "Physiotherapy", "Play Therapy"],
+    fees: [{ label: "Session fees", value: "Not published — call / visit to verify" }],
+    notes: "Hospital-anchored; CEO is a consultant speech & language pathologist; serves western Lahore; developmental & special needs.",
+    source: "rexmedcomplex.com" },
+  { name: "PetalsTalk Autism & Speech Therapy Centre", area: "Bahria Town · AA Block, Al-Noor Plaza", badge: "Directory listing",
+    services: ["Speech & Language", "ABA", "OT", "Sensory Integration", "Early Intervention"],
+    fees: [{ label: "Session fees", value: "Not published — call / visit to verify" }],
+    notes: "Direct competitor to PhysioGen in the same Bahria Town sector; autistic & non-autistic children.",
+    source: "Google Business listing" },
+  { name: "Orion ABA Pakistan", area: "Faisal Town · 335-C", badge: "Directory listing",
+    services: ["ABA Therapy", "Speech Therapy", "Physiotherapy", "Free assessment camps"],
+    fees: [{ label: "Assessment camp", value: "Free (promotional)" }, { label: "Session fees", value: "Not published — call / visit to verify" }],
+    notes: "Autism / ADHD / Down syndrome; university MOU (University of Garrison, Jan 2026).",
+    source: "findhealthclinics.org listing" },
+  { name: "Neuro Kids HUB — Child Development Centre", area: "Punjab Society, Ghazi Road · near DHA Phase 4", badge: "Fee confirmed",
+    services: ["Speech Therapy", "Behaviour Therapy", "OT"],
+    fees: [{ label: "Per session (40 min)", value: "Rs 1,500" }, { label: "Promotion (Oct 2026)", value: "15% off sessions" }],
+    notes: "Evening-only per-session model (Mon–Sat 3–7 pm), lowest published entry price; led by a doctor with 10+ years autism experience (Pakistan & UK); children & teenagers.",
+    source: "Centre Facebook / Instagram flyer, Sep 2026" },
+  { name: "GetMindCare", area: "DHA Phase 8 · clinic + online", badge: "Fees confirmed",
+    services: ["Child psychology", "Child assessment battery (clinic day)", "Free “First Look” screening", "Online sessions"],
+    fees: [{ label: "Online session", value: "Rs 3,000" }, { label: "In-person session (Lahore)", value: "Rs 5,000" }, { label: "Child assessment battery", value: "Rs 8,000" }, { label: "Care Report", value: "Rs 1,500" }],
+    notes: "Psychology-led; clear published price ladder; free screening funnel; screening explicitly never sold as diagnosis; children, families & adults, online worldwide.",
+    source: "getmindcare.com" },
+  { name: "Apni Talash Autism & Speech Rehabilitation Center", area: "Lahore · address to confirm in field pass", badge: "Directory listing",
+    services: ["Autism assessment", "Behaviour Therapy", "Speech & Language", "OT", "Sensory Integration", "Special Education program", "ADHD program"],
+    fees: [{ label: "Session fees", value: "Not published — call / visit to verify" }],
+    notes: "Autism assessment, behaviour therapy, speech & language, OT, sensory integration, special education and ADHD programs.",
+    source: "apnitalash.com prospectus" },
+  { name: "Maryam Nawaz School & Resource Center for Autism", area: "Lahore · Government of Punjab", badge: "News report",
+    services: ["OT", "Speech Therapy", "Music & art therapy", "Early Childhood Education", "Sensory garden"],
+    fees: [{ label: "Fees", value: "Public sector — n/a" }],
+    notes: "Pakistan's first government-run autism centre, inaugurated Feb 2026; Punjab announced district-level expansion; not a price competitor — referral / awareness / partnership factor.",
+    source: "Press report of inauguration, Feb 2026" }
+];
+
+var BENCHMARKS = [
+  { item: "Neuro Kids HUB session", value: "Rs 1,500", badge: "Confirmed" },
+  { item: "Speech therapy, Lahore range (Marham)", value: "Rs 1,500–5,000", badge: "Directory" },
+  { item: "Occupational therapy, Lahore range (Oladoc)", value: "Rs 2,000–5,000", badge: "Directory" },
+  { item: "Karishma Speech Clinic session (Gulberg II)", value: "Rs 4,000", badge: "Directory" },
+  { item: "GetMindCare in-person session", value: "Rs 5,000", badge: "Confirmed" },
+  { item: "GetMindCare child assessment battery", value: "Rs 8,000", badge: "Confirmed" },
+  { item: "Karishma assessment & report", value: "Rs 15,000", badge: "Directory" },
+  { item: "PhysioGen OT package (monthly)", value: "Rs 35,000/mo", badge: "Confirmed" }
+];
+
+var LOCATIONS = [
+  { area: "Bahria Town", mapped: "PhysioGen, PetalsTalk (+ hospital clinics)", verdict: "Proven · crowded",
+    detail: "Demand proven by two centres in one sector; a third entrant fights incumbents. Package pricing Rs 25–35k/mo is the local norm." },
+  { area: "DHA (Phases 4–8)", mapped: "First Hope (Ph 6), GetMindCare (Ph 8), Neuro Kids HUB (near Ph 4), Beyond Grades (Ph 6)", verdict: "Premium · costly",
+    detail: "Highest-income catchment; premium assessment-led models cluster here. Supports premium fees, but rent and salary expectations are the city's highest. Best fit for an assessment-led premium model." },
+  { area: "Johar Town", mapped: "NeuroPlay, Noor Neurodevelopment Center, MTC Mind Care (349-D), newer smaller centres", verdict: "Emerging · open — Recommended first",
+    detail: "Dense middle / upper-middle residential, many schools, Expo Centre side. Active entry signals unmet demand, no dominant premium incumbent. Strong candidate for a mid-priced transparent-fee centre." },
+  { area: "Faisal Town / Model Town", mapped: "Orion ABA (Faisal Town)", verdict: "Open",
+    detail: "Shares the Johar Town catchment with one mapped competitor; a Johar Town–Faisal Town border site can serve both." },
+  { area: "Allama Iqbal Town / Wapda Town", mapped: "REX Medical Complex", verdict: "Underserved · price-test",
+    detail: "Only one mapped centre for a very large, dense, mid-income population in western Lahore — but willingness to pay at DHA-level fees is unproven; a value package model would need testing." },
+  { area: "Gulberg", mapped: "Karishma Speech Clinic (Gulberg II), solo specialist practice", verdict: "Specialist fit",
+    detail: "Central, commercial; families travel in. Works for specialist / assessment clinics more than daily-therapy / daycare models." }
+];
+
+var SERVICES = [
+  { name: "Developmental screening & assessment", type: "Clinical", pro: "Clinical / developmental psychologist", seen: "First Hope, NEST, GetMindCare" },
+  { name: "Early intervention program (0–6)", type: "Clinical", pro: "Multidisciplinary team lead", seen: "PhysioGen, PetalsTalk, Apni Talash" },
+  { name: "Speech & language therapy", type: "Clinical", pro: "Speech-language pathologist", seen: "All mapped centres" },
+  { name: "Occupational therapy & sensory integration", type: "Clinical", pro: "Occupational therapist", seen: "PhysioGen, First Hope, NEST, REX" },
+  { name: "ABA / behaviour therapy", type: "Clinical", pro: "BCBA / behaviour therapist under supervision", seen: "Orion, First Hope, PetalsTalk" },
+  { name: "Physiotherapy (pediatric)", type: "Clinical", pro: "Physiotherapist (DPT)", seen: "REX, Orion, First Hope" },
+  { name: "Child psychology & behaviour support", type: "Clinical", pro: "Clinical psychologist", seen: "First Hope, GetMindCare, NEST" },
+  { name: "ECD / early learning program", type: "Developmental", pro: "Early-childhood educator", seen: "PhysioGen daycare, govt autism centre ECE" },
+  { name: "School readiness program (3–6)", type: "Developmental", pro: "Educator + therapist input", seen: "First Hope" },
+  { name: "Social skills groups", type: "Developmental", pro: "Psychologist / behaviour therapist", seen: "First Hope (group therapy)" },
+  { name: "Parent training & coaching", type: "Developmental", pro: "Psychologist / senior therapist", seen: "NEST family counselling; add-on elsewhere" },
+  { name: "Special education support / IEP", type: "Developmental", pro: "Special educator + psychologist", seen: "First Hope, NEST, Apni Talash" }
+];
+
+var SOURCES = [
+  { name: "physiogen.care", url: "https://www.physiogen.care/" },
+  { name: "thefirsthopecenter.com", url: "https://www.thefirsthopecenter.com/" },
+  { name: "thenestinstitute.org/en/services", url: "https://thenestinstitute.org/en/services" },
+  { name: "rexmedcomplex.com", url: "https://rexmedcomplex.com/" },
+  { name: "getmindcare.com", url: "https://getmindcare.com/" },
+  { name: "Marham — speech therapy, Lahore", url: "https://www.marham.pk/" },
+  { name: "Oladoc — occupational therapists, Lahore", url: "https://oladoc.com/" },
+  { name: "InstaCare — Karishma Speech Clinic", url: "https://instacare.pk/" },
+  { name: "UNICEF ECD Country Profile — Pakistan (PDF)", url: "https://data.unicef.org/" },
+  { name: "MDPI Children — developmental disparities", url: "https://www.mdpi.com/2227-9067/13/10/1314" },
+  { name: "UNICEF Pakistan COAR 2023 (PDF)", url: "https://www.unicef.org/pakistan" }
+];
+
+/* Feasibility presets. Rent is an explicit placeholder — replace with a verified figure. */
+var PRESETS = {
+  lean: { label: "Lean start · 2 therapists", setup: 1800000, rent: 120000, therapists: 2, salary: 100000, other: 150000, fee: 2000, sessionsPerDay: 6, days: 24, occupancy: 55, sessionsPerChild: 8 },
+  standard: { label: "Standard · 3 therapists", setup: 3000000, rent: 200000, therapists: 3, salary: 120000, other: 250000, fee: 2500, sessionsPerDay: 6, days: 24, occupancy: 60, sessionsPerChild: 8 },
+  package: { label: "Package model · 4 therapists", setup: 3500000, rent: 250000, therapists: 4, salary: 130000, other: 300000, fee: 3000, sessionsPerDay: 5, days: 24, occupancy: 70, sessionsPerChild: 10 }
+};
+
+/* ---------- module renderers ---------- */
+function renderMarket() {
+  var h = sectionTitle("Market Research · Lahore", "Market Research",
+    "Live research, 18 Nov 2026. No Lahore ECD market-size figure exists — it is not invented. Figures no centre publishes are labelled To verify, never estimated.");
+  h += '<div class="grid grid-cols-1 md:grid-cols-2 gap-space-md">';
+  INDICATORS.forEach(function (k) {
+    h += card('<div class="flex flex-col gap-space-xs">'
+      + '<div class="flex items-center justify-between gap-space-sm"><span class="font-headline-md text-headline-md text-on-surface">' + esc(k.value) + "</span>" + badge(k.badge) + "</div>"
+      + '<span class="font-label-md text-label-md text-on-surface">' + esc(k.label) + "</span>"
+      + '<span class="font-caption text-caption text-secondary">' + esc(k.note) + "</span></div>");
+  });
+  h += "</div>";
+  h += card('<span class="font-label-md text-label-md text-on-surface font-medium">ECDI on-track — children aged 36–59 months</span>'
+    + '<span class="font-caption text-caption text-secondary">UNICEF MICS 2017–2020, n = 46,067 children, peer-reviewed analysis (MDPI Children 2026). In Punjab roughly 4 in 10 children are NOT on track (~40%); literacy–numeracy is the weakest domain everywhere (14.6–27.2%); physical development exceeds 90%.</span>'
+    + '<div class="flex flex-col gap-space-sm pt-space-sm">'
+    + ECDI.map(function (r) {
+        return '<div class="flex items-center gap-space-sm"><span class="w-40 font-body-sm text-body-sm text-on-surface">' + esc(r.province) + '</span>'
+          + '<div class="flex-1 h-2 rounded-full bg-surface-container"><div class="h-2 rounded-full bg-primary" style="width:' + r.pct + '%"></div></div>'
+          + '<span class="w-14 text-right font-label-md text-label-md text-on-surface">' + r.pct + "%</span></div>";
+      }).join("")
+    + "</div>");
+  h += card('<span class="font-label-md text-label-md text-on-surface font-medium">Pakistan context</span>'
+    + '<span class="font-caption text-caption text-secondary">UNICEF ECD Country Profile Pakistan, 2025 update; UNICEF Pakistan COAR 2023.</span>'
+    + '<ul class="list-disc pl-5 pt-space-xs flex flex-col gap-1 font-body-sm text-body-sm text-on-surface-variant">'
+    + PAKISTAN_CONTEXT.map(function (t) { return "<li>" + esc(t) + "</li>"; }).join("")
+    + "</ul>");
+  h += card('<span class="font-label-md text-label-md text-on-surface font-medium">Still to research — open items, not data</span>'
+    + '<span class="font-body-sm text-body-sm text-secondary">Structured parent interviews · Google-review mining · willingness-to-pay by area · referral patterns from paediatricians / preschools.</span>');
+  document.getElementById("marketView").innerHTML = h;
+}
+
+function renderCompetitors() {
+  var h = sectionTitle("Competitor Intelligence · Lahore", "Competitors",
+    "10 centres & clinics mapped, 18 Nov 2026. Only 3 of 10 publish any price at all. Fees no centre publishes are shown as To verify — never as confirmed prices.");
+  h += '<div class="flex flex-col gap-space-md">';
+  COMPETITORS.forEach(function (c, i) {
+    h += card('<div class="flex flex-col gap-space-sm">'
+      + '<div class="flex items-start justify-between gap-space-sm"><div class="flex flex-col gap-0.5">'
+      + '<span class="font-caption text-caption text-secondary">' + (i + 1) + " / 10</span>"
+      + '<span class="font-title-md text-title-md text-on-surface">' + esc(c.name) + "</span>"
+      + '<span class="font-body-sm text-body-sm text-secondary">' + esc(c.area) + "</span></div>" + badge(c.badge) + "</div>"
+      + '<div class="flex flex-wrap gap-space-xs">' + c.services.map(function (s) {
+          return '<span class="px-space-xs py-0.5 rounded bg-surface-container-low text-on-surface font-caption text-caption">' + esc(s) + "</span>";
+        }).join("") + "</div>"
+      + '<div class="flex flex-col gap-1 pt-space-xs border-t border-outline-variant/30">'
+      + c.fees.map(function (f) {
+          return '<div class="flex items-baseline justify-between gap-space-sm"><span class="font-body-sm text-body-sm text-secondary">' + esc(f.label) + '</span><span class="font-label-md text-label-md text-on-surface text-right">' + (f.was ? '<s class="text-secondary font-body-sm text-body-sm">' + esc(f.was) + "</s> " : "") + esc(f.value) + "</span></div>";
+        }).join("")
+      + "</div>"
+      + '<span class="font-body-sm text-body-sm text-secondary">' + esc(c.notes) + "</span>"
+      + '<span class="font-caption text-caption text-secondary">Source: ' + esc(c.source) + "</span></div>");
+  });
+  h += "</div>";
+  h += card('<span class="font-label-md text-label-md text-on-surface font-medium">Pricing benchmark — published only, seen 18 Nov 2026</span>'
+    + '<div class="flex flex-col gap-1 pt-space-sm">'
+    + BENCHMARKS.map(function (b) {
+        return '<div class="flex items-baseline justify-between gap-space-sm py-1 border-b border-outline-variant/20"><span class="font-body-sm text-body-sm text-on-surface">' + esc(b.item) + '</span><span class="flex items-center gap-space-sm"><span class="font-label-md text-label-md text-on-surface">' + esc(b.value) + "</span>" + badge(b.badge) + "</span></div>";
+      }).join("")
+    + "</div>");
+  document.getElementById("competitorsView").innerHTML = h;
+}
+
+function renderLocation() {
+  var h = sectionTitle("Location Intelligence · Lahore", "Location",
+    "6 areas compared. Rent is deliberately NOT scored — no rent figure is used anywhere. Recommendation is a hypothesis to test, not a verdict.");
+  h += card('<span class="font-label-md text-label-md text-on-surface font-medium">Recommendation</span>'
+    + '<span class="font-body-md text-body-md text-on-surface"><strong>Johar Town first</strong>, DHA as premium alternative; Bahria Town proven but contested.</span>'
+    + '<span class="font-caption text-caption text-secondary">Rent verification method: 5+ live listings per shortlisted area on Zameen.com / OLX for 8–12 marla houses or commercial floors; call two estate agents per area; visit top 2 sites (parking, school proximity, legal operation).</span>');
+  h += '<div class="grid grid-cols-1 md:grid-cols-2 gap-space-md">';
+  LOCATIONS.forEach(function (l) {
+    h += card('<div class="flex flex-col gap-space-xs">'
+      + '<div class="flex items-start justify-between gap-space-sm"><span class="font-title-md text-title-md text-on-surface">' + esc(l.area) + '</span><span class="font-caption text-caption text-primary font-medium text-right">' + esc(l.verdict) + "</span></div>"
+      + '<span class="font-body-sm text-body-sm text-secondary">Mapped: ' + esc(l.mapped) + "</span>"
+      + '<span class="font-body-sm text-body-sm text-on-surface">' + esc(l.detail) + "</span></div>");
+  });
+  h += "</div>";
+  document.getElementById("locationView").innerHTML = h;
+}
+
+function renderServices() {
+  var h = sectionTitle("Services Blueprint", "Services",
+    "12 services. Clinical boundary: never recommend diagnosing or treating a child without qualified professionals; individual treatment plans require approval by qualified specialists.");
+  ["Clinical", "Developmental"].forEach(function (type) {
+    h += '<span class="font-label-md text-label-md text-on-surface font-medium uppercase tracking-wider pt-space-md">' + type + "</span>";
+    h += '<div class="flex flex-col gap-space-sm">';
+    SERVICES.filter(function (s) { return s.type === type; }).forEach(function (s) {
+      h += card('<div class="flex flex-col gap-0.5">'
+        + '<span class="font-title-md text-title-md text-on-surface">' + esc(s.name) + "</span>"
+        + '<span class="font-body-sm text-body-sm text-secondary">Professional: ' + esc(s.pro) + "</span>"
+        + '<span class="font-body-sm text-body-sm text-secondary">Seen in market: ' + esc(s.seen) + "</span></div>");
+    });
+    h += "</div>";
+  });
+  document.getElementById("servicesView").innerHTML = h;
+}
+
+function renderReports() {
+  var h = sectionTitle("Reports & Sources", "Reports",
+    "Every report carries its source name, source URL, data collection date, verification status, estimated vs confirmed figures, and research limitations.");
+  h += card('<span class="font-label-md text-label-md text-on-surface font-medium">Revenue lines a full model would add</span>'
+    + '<div class="flex flex-col gap-1 pt-space-sm">'
+    + [["Individual therapy sessions", "Rs 1,500–5,000 / session", "Confirmed range"],
+       ["Developmental assessment + report", "Rs 8,000–15,000", "Confirmed — GetMindCare · Karishma"],
+       ["Monthly therapy package", "Rs 35,000 / mo OT & special care", "Confirmed — PhysioGen"],
+       ["Daycare / ECD program", "Rs 25,000 / mo + Rs 5,000 registration", "Confirmed — PhysioGen"],
+       ["Parent training & workshops", "Not published by mapped centres", "To price-test"],
+       ["School screening / liaison contracts", "Offered by First Hope & NEST", "Fees not published — To verify"]]
+      .map(function (r) {
+        return '<div class="flex items-baseline justify-between gap-space-sm py-1 border-b border-outline-variant/20"><span class="font-body-sm text-body-sm text-on-surface">' + esc(r[0]) + '</span><span class="font-body-sm text-body-sm text-secondary text-right">' + esc(r[1]) + " · " + esc(r[2]) + "</span></div>";
+      }).join("")
+    + "</div>");
+  h += card('<span class="font-label-md text-label-md text-on-surface font-medium">Sources — all retrieved 18 Nov 2026</span>'
+    + '<span class="font-caption text-caption text-secondary">Public websites / directories only — no site visits, calls, or review-mining yet.</span>'
+    + '<div class="flex flex-col gap-1 pt-space-sm">'
+    + SOURCES.map(function (s) {
+        return '<a class="font-body-sm text-body-sm text-primary hover:underline" href="' + esc(s.url) + '" target="_blank" rel="noopener">' + esc(s.name) + "</a>";
+      }).join("")
+    + "</div>");
+  document.getElementById("reportsView").innerHTML = h;
+}
+
+/* ---------- feasibility calculator ---------- */
+var calc = Object.assign({}, PRESETS.standard);
+var calcPreset = "standard";
+
+function calcResults(s) {
+  var capacity = s.therapists * s.sessionsPerDay * s.days;
+  var booked = Math.round(capacity * s.occupancy / 100);
+  /* revenue uses the exact product (no intermediate rounding), matching the
+     ECD dashboard: 3 x 6 x 24 x 60% x 2500 = 648,000. booked is display-only. */
+  var revenue = s.therapists * s.sessionsPerDay * s.days * (s.occupancy / 100) * s.fee;
+  var cost = s.rent + s.therapists * s.salary + s.other;
+  var profit = revenue - cost;
+  var beSessions = Math.ceil(cost / s.fee);
+  var beChildren = Math.ceil(beSessions / s.sessionsPerChild);
+  var payback = profit > 0 ? (s.setup / profit).toFixed(1) + " months" : "No payback at these settings";
+  return { capacity: capacity, booked: booked, revenue: revenue, cost: cost, profit: profit, beSessions: beSessions, beChildren: beChildren, payback: payback };
+}
+
+function sliderRow(id, label, min, max, step, val, fmt) {
+  return '<div class="flex flex-col gap-1">'
+    + '<div class="flex items-baseline justify-between"><label class="font-body-sm text-body-sm text-secondary" for="' + id + '">' + esc(label) + '</label>'
+    + '<span class="font-label-md text-label-md text-on-surface" id="' + id + 'Val">' + fmt(val) + "</span></div>"
+    + '<input type="range" id="' + id + '" min="' + min + '" max="' + max + '" step="' + step + '" value="' + val + '" class="w-full accent-[#0F766E]"/>'
+    + "</div>";
+}
+
+function renderFeasibility() {
+  var h = sectionTitle("Financial Feasibility", "Feasibility",
+    "Revenue = therapists × sessions/day × days × occupancy × fee. Cost = rent + therapists × salary + other monthly costs. Assessments, packages and daycare income are EXCLUDED from the base case (upside only).");
+  h += card('<span class="font-label-md text-label-md text-on-surface font-medium">Presets</span>'
+    + '<div class="flex flex-wrap gap-space-sm pt-space-sm" id="presetRow">'
+    + Object.keys(PRESETS).map(function (k) {
+        return '<button data-preset="' + k + '" class="preset-btn px-space-md py-space-xs rounded-lg font-body-sm text-body-sm border ' + (k === calcPreset ? "bg-primary-container text-on-primary border-primary-container" : "bg-surface-container-lowest text-on-surface border-outline-variant/40") + '">' + esc(PRESETS[k].label) + "</button>";
+      }).join("")
+    + "</div>");
+  h += card('<div class="grid grid-cols-1 md:grid-cols-2 gap-space-md" id="calcInputs"></div>'
+    + '<div class="grid grid-cols-2 md:grid-cols-4 gap-space-md pt-space-md" id="calcResults"></div>'
+    + '<span class="font-caption text-caption text-secondary pt-space-sm">Rent is a placeholder — replace with a verified figure. Salary and other costs are assumptions, not market figures.</span>');
+  document.getElementById("feasibilityView").innerHTML = h;
+  bindCalculator();
+}
+
+function bindCalculator() {
+  var wrap = document.getElementById("calcInputs");
+  wrap.innerHTML =
+    sliderRow("cSetup", "One-time setup (Rs)", 0, 10000000, 50000, calc.setup, rs) +
+    sliderRow("cRent", "Monthly rent (Rs) — placeholder", 50000, 600000, 10000, calc.rent, rs) +
+    sliderRow("cTherapists", "Therapists", 1, 10, 1, calc.therapists, function (v) { return v; }) +
+    sliderRow("cSalary", "Salary per therapist / month (Rs)", 60000, 250000, 5000, calc.salary, rs) +
+    sliderRow("cOther", "Other monthly costs (Rs)", 50000, 800000, 10000, calc.other, rs) +
+    sliderRow("cFee", "Fee per session (Rs)", 1000, 6000, 100, calc.fee, rs) +
+    sliderRow("cSessions", "Sessions / therapist / day", 2, 10, 1, calc.sessionsPerDay, function (v) { return v; }) +
+    sliderRow("cDays", "Working days / month", 20, 26, 1, calc.days, function (v) { return v; }) +
+    sliderRow("cOcc", "Occupancy (%)", 10, 100, 5, calc.occupancy, function (v) { return v + "%"; }) +
+    sliderRow("cPerChild", "Sessions / child / month", 4, 16, 1, calc.sessionsPerChild, function (v) { return v; });
+  wrap.querySelectorAll("input[type=range]").forEach(function (input) {
+    input.addEventListener("input", function () {
+      var map = { cSetup: "setup", cRent: "rent", cTherapists: "therapists", cSalary: "salary", cOther: "other", cFee: "fee", cSessions: "sessionsPerDay", cDays: "days", cOcc: "occupancy", cPerChild: "sessionsPerChild" };
+      calc[map[input.id]] = Number(input.value);
+      calcPreset = "custom";
+      updateCalcLabels();
+      updateCalcResults();
+    });
+  });
+  document.querySelectorAll(".preset-btn").forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      calcPreset = btn.getAttribute("data-preset");
+      calc = Object.assign({}, PRESETS[calcPreset]);
+      renderFeasibility();
+    });
+  });
+  updateCalcLabels();
+  updateCalcResults();
+}
+
+function updateCalcLabels() {
+  var fmt = { cSetup: rs, cRent: rs, cSalary: rs, cOther: rs, cFee: rs,
+    cTherapists: function (v) { return v; }, cSessions: function (v) { return v; },
+    cDays: function (v) { return v; }, cOcc: function (v) { return v + "%"; }, cPerChild: function (v) { return v; } };
+  var map = { cSetup: "setup", cRent: "rent", cTherapists: "therapists", cSalary: "salary", cOther: "other", cFee: "fee", cSessions: "sessionsPerDay", cDays: "days", cOcc: "occupancy", cPerChild: "sessionsPerChild" };
+  Object.keys(map).forEach(function (id) {
+    var el = document.getElementById(id), lab = document.getElementById(id + "Val");
+    if (el) el.value = calc[map[id]];
+    if (lab) lab.textContent = fmt[id](calc[map[id]]);
+  });
+  document.querySelectorAll(".preset-btn").forEach(function (btn) {
+    var on = btn.getAttribute("data-preset") === calcPreset;
+    btn.className = "preset-btn px-space-md py-space-xs rounded-lg font-body-sm text-body-sm border " + (on ? "bg-primary-container text-on-primary border-primary-container" : "bg-surface-container-lowest text-on-surface border-outline-variant/40");
+  });
+}
+
+function updateCalcResults() {
+  var r = calcResults(calc);
+  var profitCls = r.profit >= 0 ? "text-primary" : "text-error";
+  document.getElementById("calcResults").innerHTML =
+    metricTile("Monthly revenue", rs(r.revenue), r.booked + " / " + r.capacity + " sessions booked") +
+    metricTile("Monthly operating cost", rs(r.cost), "Rent + salaries + other") +
+    metricTile("Monthly profit / (loss)", rs(r.profit), r.profit >= 0 ? "Profitable" : "Loss-making", profitCls) +
+    metricTile("Break-even", r.beSessions + " sessions · " + r.beChildren + " children", "Payback: " + r.payback);
+}
+function metricTile(label, value, note, valueCls) {
+  return '<div class="flex flex-col gap-0.5 p-space-sm bg-surface-container-low rounded-lg">'
+    + '<span class="font-caption text-caption text-secondary uppercase tracking-wider">' + esc(label) + "</span>"
+    + '<span class="font-headline-sm text-headline-sm ' + (valueCls || "text-on-surface") + '">' + esc(value) + "</span>"
+    + '<span class="font-caption text-caption text-secondary">' + esc(note) + "</span></div>";
+}
+
+/* ---------- navigation ---------- */
+var VIEW_MAP = { "chat": "view-chat", "market-research": "view-market", "competitors": "view-competitors", "feasibility": "view-feasibility", "location": "view-location", "services": "view-services", "reports": "view-reports" };
+
+function showView(path) {
+  var target = VIEW_MAP[path] || "view-chat";
+  Object.keys(VIEW_MAP).forEach(function (p) {
+    var el = document.getElementById(VIEW_MAP[p]);
+    if (el) el.classList.toggle("hidden", VIEW_MAP[p] !== target);
+  });
+  document.querySelectorAll("nav a[data-path]").forEach(function (a) {
+    var on = a.getAttribute("data-path") === path;
+    a.className = "flex items-center gap-space-sm px-space-sm py-2 rounded-lg transition-colors " + (on
+      ? "bg-primary-container text-on-primary font-medium"
+      : "font-body-sm text-body-sm text-on-surface-variant hover:bg-surface-container hover:text-on-surface");
+    if (on) a.setAttribute("aria-current", "page"); else a.removeAttribute("aria-current");
+  });
+  window.scrollTo({ top: 0, behavior: "smooth" });
+}
+
+/* ---------- live chat (Groq via n8n webhook) ---------- */
+function injectPrompt(text) {
+  var input = document.getElementById("userQueryInput");
+  if (!input) return;
+  input.value = text;
+  input.focus();
+  document.getElementById("chatForm").requestSubmit();
+}
+
+function appendBubble(html, who) {
+  var stream = document.getElementById("chatStream");
+  var row = document.createElement("div");
+  if (who === "user") {
+    row.className = "flex items-start justify-end gap-space-md";
+    row.innerHTML = '<div class="flex flex-col items-end gap-space-xs max-w-2xl">'
+      + '<div class="flex items-center gap-space-sm"><span class="font-caption text-caption text-secondary">You</span></div>'
+      + '<div class="bg-primary text-on-primary p-space-md rounded-xl shadow-sm font-body-md text-body-md">' + html + "</div></div>";
+  } else {
+    row.className = "flex items-start gap-space-md";
+    row.innerHTML = '<div class="w-9 h-9 rounded-lg bg-surface-container-low text-primary flex items-center justify-center flex-shrink-0 mt-0.5">'
+      + '<span class="material-symbols-outlined text-[20px]">psychology</span></div>'
+      + '<div class="flex flex-col gap-space-sm max-w-3xl">'
+      + '<div class="flex items-center gap-space-sm"><span class="font-label-md text-label-md text-on-surface font-medium">Strategic Advisor</span>'
+      + '<span class="font-caption text-caption text-secondary">Live AI · Groq</span></div>'
+      + '<div class="bg-surface-container-low text-on-surface p-space-md rounded-xl shadow-sm leading-relaxed font-body-md text-body-md">' + html + "</div></div>";
+  }
+  stream.appendChild(row);
+  row.scrollIntoView({ behavior: "smooth", block: "end" });
+  return row;
+}
+
+function formatReply(text) {
+  var safe = esc(text);
+  return safe.replace(/\n/g, "<br/>");
+}
+
+function handleQuerySubmit(event) {
+  event.preventDefault();
+  var input = document.getElementById("userQueryInput");
+  var stream = document.getElementById("chatStream");
+  if (!input || !stream) return;
+  var query = input.value.trim();
+  if (!query) return;
+  appendBubble(esc(query), "user");
+  input.value = "";
+  var typing = appendBubble('<span class="text-secondary">Thinking…</span>', "ai");
+  fetch(WEBHOOK_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ message: query })
+  })
+    .then(function (res) { return res.json(); })
+    .then(function (data) {
+      typing.remove();
+      var reply = (data && data.reply) ? String(data.reply) : "";
+      if (reply) appendBubble(formatReply(reply), "ai");
+      else appendBubble('<span class="text-secondary">The AI returned an empty reply. Please try again.</span>', "ai");
+    })
+    .catch(function () {
+      typing.remove();
+      appendBubble('<span class="text-secondary">Could not reach the AI right now. Please check the connection and try again — no answer was generated.</span>', "ai");
+    });
+}
+
+/* ---------- init ---------- */
+document.addEventListener("DOMContentLoaded", function () {
+  renderMarket();
+  renderCompetitors();
+  renderFeasibility();
+  renderLocation();
+  renderServices();
+  renderReports();
+  document.querySelectorAll("nav a[data-path]").forEach(function (a) {
+    a.addEventListener("click", function (e) {
+      e.preventDefault();
+      showView(a.getAttribute("data-path"));
+    });
+  });
+  var form = document.getElementById("chatForm");
+  if (form) form.addEventListener("submit", handleQuerySubmit);
+  showView("chat");
+});
