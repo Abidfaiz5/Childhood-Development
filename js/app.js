@@ -6,6 +6,14 @@
 
 var WEBHOOK_URL = "https://n8n.urdubazars.com/webhook/consultancy-demo-chat";
 
+/* ---------- Punjab cities (client target: Faisalabad first, then all Punjab) ---------- */
+var PUNJAB_CITIES = ["Faisalabad", "Lahore", "Rawalpindi", "Multan", "Gujranwala", "Sialkot", "Bahawalpur", "Sargodha", "Gujrat", "Jhelum", "Sheikhupura", "Kasur", "Okara", "Sahiwal", "Rahim Yar Khan", "Dera Ghazi Khan", "Jhang", "Toba Tek Singh", "Bahawalnagar", "Mianwali", "Attock", "Chakwal", "Vehari", "Khanewal", "Muzaffargarh", "Layyah", "Bhakkar", "Khushab", "Hafizabad", "Mandi Bahauddin", "Narowal", "Pakpattan", "Chiniot", "Lodhran", "Rajanpur"];
+var DEFAULT_CITY = "Faisalabad";
+function getSelectedCity() {
+  var sel = document.getElementById("citySelect");
+  return (sel && sel.value) ? sel.value : DEFAULT_CITY;
+}
+
 /* ---------- helpers ---------- */
 function esc(s) {
   return String(s).replace(/[&<>"'`=\/]/g, function (c) {
@@ -177,9 +185,16 @@ var PRESETS = {
 };
 
 /* ---------- module renderers ---------- */
+function sourceLink(source) {
+  var found = null;
+  SOURCES.forEach(function (s) { if (s.name === source) found = s; });
+  if (found) return '<a class="font-caption text-caption text-primary hover:underline" href="' + esc(found.url) + '" target="_blank" rel="noopener">Source: ' + esc(source) + "</a>";
+  return '<span class="font-caption text-caption text-secondary">Source: ' + esc(source) + "</span>";
+}
+
 function renderMarket() {
-  var h = sectionTitle("Market Research · Lahore", "Market Research",
-    "Live research, 18 Nov 2026. No Lahore ECD market-size figure exists — it is not invented. Figures no centre publishes are labelled To verify, never estimated.");
+  var h = sectionTitle("Market Research · Punjab", "Market Research",
+    "Verified Lahore baseline, 18 Nov 2026. Pick any Punjab city in the chat for live data. No Lahore ECD market-size figure exists — it is not invented. Figures no centre publishes are labelled To verify, never estimated.");
   h += '<div class="grid grid-cols-1 md:grid-cols-2 gap-space-md">';
   INDICATORS.forEach(function (k) {
     h += card('<div class="flex flex-col gap-space-xs">'
@@ -208,8 +223,8 @@ function renderMarket() {
 }
 
 function renderCompetitors() {
-  var h = sectionTitle("Competitor Intelligence · Lahore", "Competitors",
-    "10 centres & clinics mapped, 18 Nov 2026. Only 3 of 10 publish any price at all. Fees no centre publishes are shown as To verify — never as confirmed prices.");
+  var h = sectionTitle("Competitor Intelligence · Punjab", "Competitors",
+    "10 Lahore centres & clinics mapped (verified baseline), 18 Nov 2026. Use the chat for any other Punjab city. Only 3 of 10 publish any price at all. Fees no centre publishes are shown as To verify — never as confirmed prices.");
   h += '<div class="flex flex-col gap-space-md">';
   COMPETITORS.forEach(function (c, i) {
     h += card('<div class="flex flex-col gap-space-sm">'
@@ -226,7 +241,7 @@ function renderCompetitors() {
         }).join("")
       + "</div>"
       + '<span class="font-body-sm text-body-sm text-secondary">' + esc(c.notes) + "</span>"
-      + '<span class="font-caption text-caption text-secondary">Source: ' + esc(c.source) + "</span></div>");
+      + sourceLink(c.source) + "</div>");
   });
   h += "</div>";
   h += card('<span class="font-label-md text-label-md text-on-surface font-medium">Pricing benchmark — published only, seen 18 Nov 2026</span>'
@@ -239,8 +254,8 @@ function renderCompetitors() {
 }
 
 function renderLocation() {
-  var h = sectionTitle("Location Intelligence · Lahore", "Location",
-    "6 areas compared. Rent is deliberately NOT scored — no rent figure is used anywhere. Recommendation is a hypothesis to test, not a verdict.");
+  var h = sectionTitle("Location Intelligence · Punjab", "Location",
+    "6 Lahore areas compared (verified baseline). Pick any Punjab city in the chat for live location research. Rent is deliberately NOT scored — no rent figure is used anywhere. Recommendation is a hypothesis to test, not a verdict.");
   h += card('<span class="font-label-md text-label-md text-on-surface font-medium">Recommendation</span>'
     + '<span class="font-body-md text-body-md text-on-surface"><strong>Johar Town first</strong>, DHA as premium alternative; Bahria Town proven but contested.</span>'
     + '<span class="font-caption text-caption text-secondary">Rent verification method: 5+ live listings per shortlisted area on Zameen.com / OLX for 8–12 marla houses or commercial floors; call two estate agents per area; visit top 2 sites (parking, school proximity, legal operation).</span>');
@@ -429,6 +444,127 @@ function showView(path) {
   window.scrollTo({ top: 0, behavior: "smooth" });
 }
 
+/* ---------- Punjab city selector, chat highlight, activation ---------- */
+function styleDarkHeader() {
+  var header = document.querySelector("header");
+  if (!header) return;
+  header.classList.add("app-header");
+  var title = header.querySelector("span.font-label-md");
+  if (title) {
+    title.classList.add("cursor-pointer");
+    title.setAttribute("role", "button");
+    title.setAttribute("title", "Go to Chat (Home)");
+    title.addEventListener("click", function () { showView("chat"); });
+  }
+}
+
+function buildCitySelector() {
+  var form = document.getElementById("chatForm");
+  if (!form || document.getElementById("citySelect")) return;
+  var wrap = document.createElement("div");
+  wrap.className = "flex flex-wrap items-center gap-space-sm pb-space-xs";
+  var opts = PUNJAB_CITIES.map(function (c) {
+    return '<option value="' + esc(c) + '"' + (c === DEFAULT_CITY ? " selected" : "") + ">" + esc(c) + "</option>";
+  }).join("");
+  wrap.innerHTML = '<label for="citySelect" class="font-label-md text-label-md text-on-surface font-medium">City</label>'
+    + '<select id="citySelect" class="px-space-sm py-space-xs rounded-lg border border-outline-variant/50 bg-surface-container-lowest font-body-md text-body-md text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/40">' + opts + "</select>"
+    + '<span class="font-caption text-caption text-secondary">Live search uses this city — change it any time.</span>';
+  form.parentElement.insertBefore(wrap, form);
+  document.getElementById("citySelect").addEventListener("change", function () {
+    renderSuggested();
+  });
+}
+
+function renderSuggested() {
+  var row = document.getElementById("suggestedRow");
+  if (!row) {
+    var first = document.querySelector('button[onclick*="injectPrompt"]');
+    if (first && first.parentElement) { row = first.parentElement; row.id = "suggestedRow"; }
+  }
+  if (!row) return;
+  var city = getSelectedCity();
+  var qs = [
+    { icon: "explore", text: "Is " + city + " a good location for a centre?" },
+    { icon: "price_change", text: "What are therapy fees in " + city + "?" },
+    { icon: "calculate", text: "Calculate break-even for 4 therapists" }
+  ];
+  row.innerHTML = qs.map(function (q) {
+    return '<button type="button" class="group px-space-md py-space-xs bg-surface-container-low hover:bg-surface-container text-on-surface rounded-lg font-body-sm text-body-sm transition-all text-left flex items-center gap-space-xs shadow-sm" data-q="' + esc(q.text) + '">'
+      + '<span class="material-symbols-outlined text-secondary text-[16px] group-hover:text-primary">' + q.icon + "</span>"
+      + "<span>" + esc(q.text) + "</span></button>";
+  }).join("");
+  row.querySelectorAll("button[data-q]").forEach(function (b) {
+    b.addEventListener("click", function () { injectPrompt(b.getAttribute("data-q")); });
+  });
+}
+
+function buildChatHighlight() {
+  var h1 = document.querySelector("#view-chat h1");
+  if (h1 && !document.getElementById("aiFeatureBanner")) {
+    var banner = document.createElement("div");
+    banner.id = "aiFeatureBanner";
+    banner.className = "rounded-xl p-space-md shadow-sm flex items-start gap-space-md";
+    banner.style.background = "linear-gradient(135deg, #0F766E 0%, #042F2E 100%)";
+    banner.innerHTML = '<div class="w-10 h-10 rounded-lg bg-white/15 text-white flex items-center justify-center flex-shrink-0"><span class="material-symbols-outlined text-[22px]">psychology</span></div>'
+      + '<div class="flex flex-col gap-0.5">'
+      + '<span class="font-label-md text-label-md text-white font-medium">★ Special feature — Ask the AI</span>'
+      + '<span class="font-body-sm text-body-sm text-white/85">Type any question below and the Consultancy Brain answers with live research and sources — fees, locations, competitors, or feasibility for your selected city.</span>'
+      + "</div>";
+    h1.parentElement.insertAdjacentElement("afterend", banner);
+  }
+  var form = document.getElementById("chatForm");
+  if (form) form.classList.add("chat-form-highlight");
+  var chatNav = document.querySelector('nav a[data-path="chat"]');
+  if (chatNav && !chatNav.querySelector(".ai-nav-badge")) {
+    var b = document.createElement("span");
+    b.className = "ai-nav-badge ml-auto px-1.5 py-0.5 rounded bg-primary text-on-primary font-caption text-[10px] font-semibold";
+    b.textContent = "AI";
+    chatNav.appendChild(b);
+  }
+}
+
+var FRAMEWORK_GOTO = ["chat", "market-research", "competitors", "feasibility", "location", "reports", "reports"];
+function activateFrameworkSteps() {
+  document.querySelectorAll("aside ol li").forEach(function (li, i) {
+    li.classList.add("cursor-pointer", "clickable-card", "framework-step");
+    li.setAttribute("role", "button");
+    li.setAttribute("tabindex", "0");
+    var path = FRAMEWORK_GOTO[i] || "chat";
+    li.setAttribute("title", "Open the " + path.replace(/-/g, " ") + " view");
+    li.addEventListener("click", function () { showView(path); });
+    li.addEventListener("keydown", function (e) { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); showView(path); } });
+  });
+}
+
+var MOSAIC_GOTO = ["services", "reports", "feasibility"];
+var MOSAIC_LABEL = ["Services", "Reports", "Feasibility"];
+function activateMosaicCards() {
+  var grid = document.querySelector('#view-chat div[class*="grid-cols-3"]');
+  if (!grid) return;
+  var cards = grid.children;
+  for (var i = 0; i < cards.length && i < MOSAIC_GOTO.length; i++) {
+    (function (card, path, label) {
+      card.classList.add("cursor-pointer", "clickable-card");
+      card.setAttribute("role", "button");
+      card.setAttribute("tabindex", "0");
+      card.setAttribute("title", "Open " + label);
+      card.addEventListener("click", function () { showView(path); });
+      card.addEventListener("keydown", function (e) { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); showView(path); } });
+    })(cards[i], MOSAIC_GOTO[i], MOSAIC_LABEL[i]);
+  }
+}
+
+function updateWelcomeScope() {
+  var stream = document.getElementById("chatStream");
+  if (!stream) return;
+  var ps = stream.querySelectorAll("p");
+  for (var i = 0; i < ps.length; i++) {
+    if (ps[i].textContent.indexOf("Lahore, Karachi, and Islamabad") !== -1) {
+      ps[i].textContent = ps[i].textContent.replace("localized operational environments such as Lahore, Karachi, and Islamabad", "localized operational environments across Punjab — Faisalabad first, then every Punjab city");
+    }
+  }
+}
+
 /* ---------- live chat (Groq via n8n webhook) ---------- */
 function injectPrompt(text) {
   var input = document.getElementById("userQueryInput");
@@ -478,7 +614,7 @@ function handleQuerySubmit(event) {
   fetch(WEBHOOK_URL, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ message: query })
+    body: JSON.stringify({ message: query, city: getSelectedCity() })
   })
     .then(function (res) { return res.json(); })
     .then(function (data) {
@@ -507,8 +643,16 @@ document.addEventListener("DOMContentLoaded", function () {
       showView(a.getAttribute("data-path"));
     });
   });
-  var form = document.getElementById("chatForm");
-  if (form) form.addEventListener("submit", handleQuerySubmit);
+  /* NOTE: the chat form already calls handleQuerySubmit via its inline
+     onsubmit in index.html — do NOT add a second submit listener here,
+     or every question would post twice. */
+  styleDarkHeader();
+  buildCitySelector();
+  renderSuggested();
+  buildChatHighlight();
+  activateFrameworkSteps();
+  activateMosaicCards();
+  updateWelcomeScope();
   showView("chat");
 });
 

@@ -1,1 +1,19 @@
 @layer base{html,body{margin:0;padding:0;}body{overscroll-behavior:none;}main>:first-child{margin-top:0!important;}main>:last-child{margin-bottom:0!important;}}::-webkit-scrollbar{display:none;}
+
+/* --- Dark app header (Abid: dark header background) --- */
+header.app-header { background: #042F2E !important; border-color: rgba(255,255,255,0.12) !important; }
+header.app-header .text-on-surface { color: #ffffff !important; }
+header.app-header .bg-surface-container-high { background: rgba(255,255,255,0.12) !important; border-color: rgba(255,255,255,0.22) !important; }
+header.app-header .bg-surface-container-high.text-primary { color: rgba(255,255,255,0.92) !important; }
+header.app-header .bg-primary { background: #34D399 !important; }
+header.app-header .text-secondary { color: rgba(255,255,255,0.8) !important; }
+
+/* --- Clickable cards / rows (every link & button feels active) --- */
+.clickable-card, .framework-step, header.app-header span[role="button"] { cursor: pointer; }
+.clickable-card { transition: box-shadow 0.2s ease, transform 0.2s ease; }
+.clickable-card:hover { box-shadow: 0 6px 20px rgba(15,118,110,0.18); transform: translateY(-1px); }
+.framework-step { transition: background-color 0.15s ease; }
+.framework-step:hover { background-color: rgba(15,118,110,0.08); }
+
+/* --- Highlighted AI chat input (special feature) --- */
+.chat-form-highlight { box-shadow: 0 0 0 2px rgba(15,118,110,0.45), 0 4px 14px rgba(15,118,110,0.18) !important; }
